@@ -1,0 +1,21 @@
+<%@ page import="java.sql.*" %>
+<%!
+  /* Le variavel de ambiente do servico (setenv.sh); se nao existir usa o padrao */
+  static String env(String chave, String padrao) {
+    String v = System.getenv(chave);
+    return (v == null || v.isEmpty()) ? padrao : v;
+  }
+
+  static Connection abrirConexao() throws Exception {
+    Class.forName("com.mysql.cj.jdbc.Driver");
+    String url = env("DB_URL", "jdbc:mysql://localhost:3306/enterprise?useSSL=false&allowPublicKeyRetrieval=true");
+    return DriverManager.getConnection(url, env("DB_USER", "saas"), env("DB_PASS", "saas"));
+  }
+
+  /* Evita XSS ao imprimir dados na tela */
+  static String esc(String s) {
+    if (s == null) return "";
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace("\"", "&quot;").replace("'", "&#39;");
+  }
+%>

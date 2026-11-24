@@ -1,0 +1,58 @@
+<%
+  /* ==============================================================
+     VALIDACAO DE TOKEN (incluida em toda pagina protegida)
+     1) a sessao precisa ter o atributo "autorizacao" igual ao Id da sessao
+     2) o token TAMBEM precisa estar vigente no BANCO DE DADOS (e nao expirado)
+     Se algo falhar: token invalidado no BD, sessao encerrada, volta ao index.
+     Resultado: variaveis usuarioSessao e perfilSessao.
+     ============================================================== */
+  response.setHeader("Cache-Control", "no-cache,no-store,must-revalidate");
+  response.setHeader("Pragma", "no-cache");
+  response.setDateHeader("Expires", 0);
+
+  String vUsuario = (String) session.getAttribute("usuario");
+  String vToken   = (String) session.getAttribute("autorizacao");
+  String usuarioSessao = null;
+  String perfilSessao  = null;
+
+  if (vUsuario != null && vToken != null && vToken.equals(session.getId())) {
+    try (Connection vc = abrirConexao();
+         PreparedStatement vp = vc.prepareStatement(
+           "SELECT perfil FROM autenticacaoMais WHERE usuario = ? AND tokenVigente = ? " +
+           "AND dataHoraUltimaAutorizacao > NOW() - INTERVAL 30 MINUTE")) {
+      vp.setString(1, vUsuario);
+      vp.setString(2, vToken);
+      try (ResultSet vr = vp.executeQuery()) {
+        if (vr.next()) {
+          perfilSessao = vr.getString(1);
+          usuarioSessao = vUsuario;
+        }
+      }
+      if (perfilSessao != null) {   // renova o prazo (expiracao por inatividade)
+        try (PreparedStatement vu = vc.prepareStatement(
+               "UPDATE autenticacaoMais SET dataHoraUltimaAutorizacao = NOW() WHERE usuario = ?")) {
+          vu.setString(1, vUsuario);
+          vu.executeUpdate();
+        }
+      }
+    } catch (Exception vEx) {
+      perfilSessao = null;
+      usuarioSessao = null;
+    }
+  }
+
+  if (perfilSessao == null) {
+    if (vUsuario != null) {   // invalida o token no banco
+      try (Connection vc2 = abrirConexao();
+           PreparedStatement vu2 = vc2.prepareStatement(
+             "UPDATE autenticacaoMais SET tokenVigente = 'sem-token' WHERE usuario = ? AND tokenVigente = ?")) {
+        vu2.setString(1, vUsuario);
+        vu2.setString(2, vToken == null ? "" : vToken);
+        vu2.executeUpdate();
+      } catch (Exception vEx2) { }
+    }
+    session.invalidate();
+    response.sendRedirect("index.jsp?erro=sessao");
+    return;
+  }
+%>
